@@ -16,3 +16,13 @@
 ***Буде плюсом:***
 1. Налаштувати оточення для розробки (Truffle, Hardhat, etc).
 2. Покрити функціонал фабрики та лотереї тестами.
+
+# Karpunets Lottery
+
+```shell
+npx run compile
+npx run test
+npx run deploy
+npx run verify-factory {address}
+npx run verify-lottery {address}
+```

@@ -31,10 +31,16 @@ contract Lottery is VRFConsumerBaseV2 {
     uint32 internal immutable callbackGasLimit;
     uint16 internal immutable requestConfirmations;
 
-    mapping(uint => address) requestToSender;
-    mapping(uint16 => address[]) public ticketParticipants;
-    mapping(address => uint16[]) public participantTickets;
-    uint16 public maxCurrentTicket;
+    mapping(uint => address) internal requestToSender;
+    uint internal requestsWaiting;
+
+    mapping(uint16 => address[]) internal ticketParticipants;
+    mapping(address => uint16[]) internal participantTickets;
+    uint16 internal maxCurrentTicket;
+
+    uint internal ownerProfit;
+    uint internal participantProfit;
+    mapping(address => bool) internal transferred;
 
     constructor(
         address _owner,
@@ -96,6 +102,7 @@ contract Lottery is VRFConsumerBaseV2 {
         );
 
         requestToSender[requestId] = msg.sender;
+        requestsWaiting++;
 
 
         uint ticketsPrice = ticketAmount * ticketPrice;
@@ -116,6 +123,7 @@ contract Lottery is VRFConsumerBaseV2 {
             ticketParticipants[ticket].push(sender);
             participantTickets[sender].push(ticket);
         }
+        requestsWaiting--;
     }
 
     function myTickets() public view returns (uint16[] memory) {
@@ -123,15 +131,34 @@ contract Lottery is VRFConsumerBaseV2 {
     }
 
     function withdraw() external timedTransitions atStage(Stages.FINISHED) {
-        require(owner == msg.sender, "Lottery: only owner");
-        uint currentBalance = address(this).balance;
-        uint ownerProfit = currentBalance / 10;
-        uint participantsProfit = currentBalance - ownerProfit;
-        uint participantProfit = participantsProfit / ticketParticipants[maxCurrentTicket].length;
-
-        payable(owner).transfer(ownerProfit);
-        for (uint i = 0; i < ticketParticipants[maxCurrentTicket].length; i++) {
-            payable(ticketParticipants[maxCurrentTicket][i]).transfer(participantProfit);
+        require(requestsWaiting == 0, "Lottery: Wait until all users will get their tickets");
+        if (ownerProfit == 0) {
+            uint currentBalance = address(this).balance;
+            ownerProfit = currentBalance / 10;
+            uint participantsProfit = currentBalance - ownerProfit;
+            participantProfit = participantsProfit / ticketParticipants[maxCurrentTicket].length;
         }
+        if (!transferred[msg.sender]) {
+            if (owner == msg.sender) {
+                (bool sent,) = owner.call{value : ownerProfit}("");
+                require(sent, "Lottery: Failed to send Ether to owner");
+            } else {
+                bool doesUserWin = false;
+                for (uint i = 0; i < min(MAX_ALLOWED_TICKETS, participantTickets[msg.sender].length); i++) {
+                    if (participantTickets[msg.sender][i] == maxCurrentTicket) {
+                        doesUserWin = true;
+                        break;
+                    }
+                }
+                if (doesUserWin) {
+                    (bool sent,) = msg.sender.call{value : participantProfit}("");
+                    require(sent, "Lottery: Failed to send Ether");
+                }
+            }
+        }
+    }
+
+    function min(uint256 a, uint256 b) internal pure returns (uint256) {
+        return a < b ? a : b;
     }
 }

@@ -2,8 +2,7 @@ const {expect} = require("chai");
 const {ethers, network} = require("hardhat");
 
 describe("Lottery", function () {
-    let owner;
-    let alice, bob;
+    let owner, alice, bob;
     let lotteryFactory, vrfCoordinatorV2Mock;
     let subscriptionId;
     const keyHash = `0xd89b2bf150e3b9e13446986e571fb9cab24b13cea0a43ea20a6049a85cc807cc`;
@@ -11,7 +10,7 @@ describe("Lottery", function () {
     const requestConfirmations = `3`;
 
     beforeEach(async () => {
-        [owner, alice, bob] = await ethers.getSigners();
+        [owner, alice, bob, artur] = await ethers.getSigners();
         const LotteryFactory = await ethers.getContractFactory("LotteryFactory");
         const VRFCoordinatorV2Mock = await ethers.getContractFactory("VRFCoordinatorV2Mock");
 
@@ -45,15 +44,20 @@ describe("Lottery", function () {
         const Lottery = await ethers.getContractFactory("Lottery");
         const lottery = await Lottery.attach(lotteryAddress);
 
+        const lotteryBalanceBefore = await getBalance(lottery)
+        const ownerBalanceBefore = await getBalance(owner)
+        const bobBalanceBefore = await getBalance(bob)
+        const aliceBalanceBefore = await getBalance(alice)
+
         await expect(lottery.connect(alice).buy({
-            value: ethers.utils.parseEther("2.0")
+            value: ethers.utils.parseEther("0.2")
         })).to.be.revertedWith("Lottery: not allowed yet")
 
         await increaseTime(startAfter);
 
         await buy(lottery, alice, "0.2");
         let aliceTickets = await getTickets(lottery, alice)
-        expect(aliceTickets.length).to.equal(2)
+        expect(2).to.equal(aliceTickets.length)
         console.log(aliceTickets)
 
         for (let i = 0; i < 10; i++) {
@@ -66,16 +70,23 @@ describe("Lottery", function () {
         await increaseTime(duration);
 
         await expect(lottery.connect(alice).buy({
-            value: ethers.utils.parseEther("2.0")
+            value: ethers.utils.parseEther("0.2")
         })).to.be.revertedWith("Lottery: not allowed yet")
 
-        const ownerBalanceBefore = await getBalance(owner)
+        const lotteryBalanceAfter = await getBalance(lottery)
+        expectEtherChanged(lotteryBalanceBefore, lotteryBalanceAfter, "+1.20")
 
-        await lottery.withdraw()
-
+        await lottery.connect(owner).withdraw()
         const ownerBalanceAfter = await getBalance(owner)
-
         expectEtherChanged(ownerBalanceBefore, ownerBalanceAfter, "+0.12")
+
+        await lottery.connect(bob).withdraw()
+        const bobBalanceAfter = await getBalance(bob)
+        expectEtherChanged(bobBalanceBefore, bobBalanceAfter, "+0.08")
+
+        await lottery.connect(alice).withdraw()
+        const aliceBalanceAfter = await getBalance(alice)
+        expectEtherChanged(aliceBalanceBefore, aliceBalanceAfter, "-0.20")
     });
 
     async function increaseTime(duration) {
@@ -106,6 +117,6 @@ describe("Lottery", function () {
     function expectEtherChanged(before, after, ether) {
         let current = parseFloat(ethers.utils.formatEther(after.ether - before.ether + "")).toFixed(2);
         current = current === '-0.00' ? "0.00" : current
-        expect(parseFloat(ether).toFixed(2)).to.equal(current);
+        expect(current).to.equal(parseFloat(ether).toFixed(2));
     }
 });
